@@ -1,9 +1,9 @@
-import { spawn } from 'child_process';
-import rp from 'request-promise';
-import fs from 'fs';
-import readline from 'readline';
-import progress from 'progress';
-import chalk from 'chalk';
+const { spawn } = require('child_process');
+const rp = require('request-promise');
+const fs = require('fs');
+const readline = require('readline');
+const progress = require('progress');
+const chalk = require('chalk');
 
 // Adres URL do logowania HTTP
 const httpLoginURL = 'http://192.168.1.1';
