@@ -1,0 +1,13 @@
+#!/bin/bash
+
+# Przejście do katalogu, gdzie znajduje się program
+cd 
+
+# Usunięcie istniejącego programu
+rm -rf Admin_crack_login
+
+# Pobranie programu z repozytorium
+git clone https://github.com/Adminek01/Admin_crack_login .
+
+# Instalacja niezbędnych zależności
+npm install
