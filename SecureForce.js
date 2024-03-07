@@ -1,4 +1,4 @@
- import { spawn } from 'child_process';
+import { spawn } from 'child_process';
 import rp from 'request-promise';
 import fs from 'fs';
 import readline from 'readline';
