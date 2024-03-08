@@ -1,15 +1,21 @@
-// Zaimportuj moduł crypto
 const crypto = require('crypto');
-const rp = require('request-promise');
-const cheerio = require('cheerio');
+const readline = require('readline');
+const { exec } = require('child_process');
 
-// Zdefiniuj dane, na podstawie których chcesz generować hasła i loginy
-const data = {
-  name: 'Jan',
-  surname: 'Kowalski',
-  birthdate: '01-01-2000',
-  email: 'jan.kowalski@example.com'
-};
+// Utwórz interfejs do odczytu z konsoli
+const rl = readline.createInterface({
+  input: process.stdin,
+  output: process.stdout
+});
+
+// Funkcja do odczytu danych od użytkownika
+function promptUser(question) {
+  return new Promise((resolve, reject) => {
+    rl.question(question, (answer) => {
+      resolve(answer);
+    });
+  });
+}
 
 // Zdefiniuj funkcję, która tworzy losowy ciąg znaków o danej długości
 function randomString(length) {
@@ -18,7 +24,7 @@ function randomString(length) {
   // Zamień bufor na ciąg znaków w kodowaniu base64
   const string = buffer.toString('base64');
   // Usuń znaki specjalne i zwróć ciąg znaków
-  return string.replace(/[^a-zA-Z0-9]/g, '');
+  return string.replace(/[^a-zA-Z0-9]/g, '').slice(0, length);
 }
 
 // Zdefiniuj funkcję, która tworzy hasło na podstawie danych
@@ -41,63 +47,58 @@ function generateLogin(data) {
   return prefix + suffix;
 }
 
-// Zdefiniuj stałą
-const router_url = 'http://192.168.1.1';
-
-// Zdefiniuj funkcję pomocniczą
-function detect_auth_type(router_url) {
-  // Utwórz obiekt z opcjami zapytania
-  const options = {
-    uri: router_url,
-    resolveWithFullResponse: true, // zwróć pełną odpowiedź
-    simple: false, // nie rzucaj błędu dla kodów 4xx i 5xx
-    auth: { // ustaw opcje autoryzacji
-      user: 'user', // przykładowa nazwa użytkownika
-      pass: 'pass', // przykładowe hasło
-      sendImmediately: false // wyślij nagłówek autoryzacji tylko gdy jest wymagany
+// Funkcja do skanowania za pomocą nmap
+function scanWithNmap(callback) {
+  exec('nmap -sP 192.168.1.0/24', (error, stdout, stderr) => {
+    if (error) {
+      console.error(`Błąd podczas skanowania: ${error.message}`);
+      return;
     }
-  };
-  // Wyślij zapytanie HTTP z opcjami
-  return rp(options)
-    .then(response => {
-      // Sprawdź kod odpowiedzi i nagłówek WWW-Authenticate
-      if (response.statusCode == 401 && response.headers['www-authenticate']) {
-        // Zwróć typ autoryzacji z nagłówka
-        return response.headers['www-authenticate'].split(' ')[0];
-      } else if (response.statusCode == 200) {
-        // Załaduj ciało odpowiedzi jako HTML
-        const $ = cheerio.load(response.body);
-        // Sprawdź, czy istnieje element form
-        if ($('form').length > 0) {
-          // Zwróć 'HTTP Form'
-          return 'HTTP Form';
-        } else if (response.headers['server'].startsWith('SSH')) {
-          // Zwróć 'SSH'
-          return 'SSH';
-        } else {
-          // Zwróć 'Unknown'
-          return 'Unknown';
-        }
-      } else {
-        // Zwróć 'None'
-        return 'None';
-      }
-    })
-    .catch(error => {
-      // Obsłuż błąd
-      console.error(error);
-    });
+    if (stderr) {
+      console.error(`Błąd podczas skanowania: ${stderr}`);
+      return;
+    }
+    // Przetwórz wynik skanowania
+    const hosts = stdout.split('\n').filter(line => line.includes('Nmap scan report'));
+    callback(hosts);
+  });
 }
 
-// Wygeneruj i wyświetl hasło i login na podstawie danych
-const password = generatePassword(data);
-const login = generateLogin(data);
-console.log(`Hasło: ${password}`);
-console.log(`Login: ${login}`);
+// Funkcja główna programu
+async function configureProgram() {
+  // Pobierz dane od użytkownika
+  const name = await promptUser('Podaj imię: ');
+  const surname = await promptUser('Podaj nazwisko: ');
+  const birthdate = await promptUser('Podaj datę urodzenia (DD-MM-YYYY): ');
+  const email = await promptUser('Podaj adres email: ');
 
-// Test funkcji detect_auth_type
-detect_auth_type(router_url)
-  .then(result => {
-    // Wyświetl wynik
-    console.log(result);
+  // Zaktualizuj dane
+  const data = {
+    name,
+    surname,
+    birthdate,
+    email
+  };
+
+  // Wywołaj funkcję skanowania i generowania danych
+  scanWithNmap((hosts) => {
+    // Wybierz losowy host
+    const randomHost = hosts[Math.floor(Math.random() * hosts.length)];
+    // Pobierz ostatni oktet adresu IP
+    const lastOctet = randomHost.split('.')[3];
+    // Zaktualizuj dane z wykorzystaniem ostatniego oktetu IP
+    data.ip = `192.168.1.${lastOctet}`;
+    // Wygeneruj login i hasło na podstawie zaktualizowanych danych
+    const password = generatePassword(data);
+    const login = generateLogin(data);
+    // Wyświetl dane
+    console.log('Wygenerowane dane:');
+    console.log(`Login: ${login}`);
+    console.log(`Hasło: ${password}`);
+    // Zakończ interfejs do odczytu z konsoli
+    rl.close();
   });
+}
+
+// Uruchom konfigurację programu
+configureProgram();
